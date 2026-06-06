@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "markets-watch",
+  "version": "1.0.0",
+  "description": "Custom MCP tool for Yahoo Finance: getQuote returns a symbol's price, day move and key stats.",
+  "content_scripts": [
+    {
+      "matches": ["*://finance.yahoo.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "tools": [
+    {
+      "name": "getQuote",
+      "description": "Returns a ticker's live quote from Yahoo Finance (name, price, day change %, day range, market cap). Pass `symbol` like 'AAPL', 'NVDA', or 'BTC-USD'. Self-contained: if that quote page isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "symbol": { "type": "string", "description": "Ticker symbol, e.g. 'AAPL' or 'BTC-USD'." } },
+        "required": ["symbol"]
+      }
+    },
+    {
+      "name": "finish",
+      "description": "Call when the task is complete. Pass a short result summary; its value is the final result.",
+      "inputSchema": { "type": "object", "properties": { "summary": { "type": "string" } } }
+    }
+  ]
+}

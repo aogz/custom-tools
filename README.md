@@ -23,6 +23,9 @@ POST /api/spaces/{space_id}/extensions/github/
 | `github-release-notes` | `getLatestRelease`, `finish` | Latest release of a GitHub repo |
 | `competitor-price-watch` | `readPrices`, `finish` | Prices on any pricing page |
 | `job-board-scout` | `readJobs`, `finish` | Job listings on any board |
+| `flight-deals` | `searchFlights`, `finish` | Cheapest itineraries on Google Flights |
+| `restaurant-finder` | `findAvailability`, `finish` | Open tables on OpenTable |
+| `markets-watch` | `getQuote`, `finish` | Live quotes on Yahoo Finance |
 
 ## How the tools are designed
 

@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "restaurant-finder",
+  "version": "1.0.0",
+  "description": "Custom MCP tool for OpenTable: findAvailability returns restaurants with open tables.",
+  "content_scripts": [
+    {
+      "matches": ["*://www.opentable.com/*", "*://www.opentable.co.uk/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "tools": [
+    {
+      "name": "findAvailability",
+      "description": "Searches OpenTable and returns restaurants with open tables (name, cuisine, rating, price, available times). Self-contained: if the search results page isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "city": { "type": "string", "description": "City or area, e.g. 'Amsterdam'." },
+          "date": { "type": "string", "description": "Date, YYYY-MM-DD." },
+          "time": { "type": "string", "description": "24h time, e.g. '20:00'." },
+          "party_size": { "type": "integer", "description": "Number of people (default 2)." },
+          "cuisine": { "type": "string", "description": "Optional cuisine, e.g. 'Italian'." }
+        },
+        "required": ["city"]
+      }
+    },
+    {
+      "name": "finish",
+      "description": "Call when the task is complete. Pass a short result summary; its value is the final result.",
+      "inputSchema": { "type": "object", "properties": { "summary": { "type": "string" } } }
+    }
+  ]
+}
