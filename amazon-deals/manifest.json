@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "amazon-deals",
+  "version": "1.0.0",
+  "description": "Custom MCP tool for amazon.com: findDeals reads Today's Deals and returns discounted products.",
+  "content_scripts": [
+    {
+      "matches": ["*://*.amazon.com/*", "*://*.amazon.co.uk/*", "*://*.amazon.nl/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "tools": [
+    {
+      "name": "findDeals",
+      "description": "Reads amazon.com's Today's Deals page and returns discounted products (title, price, discount, url). Self-contained: if the deals page isn't open it returns {status:\"navigate_required\", navigateTo} — open it with the navigate tool, then call again.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "max_results": { "type": "integer", "description": "Max deals to return (default 12)." }
+        }
+      }
+    },
+    {
+      "name": "finish",
+      "description": "Call when the task is complete. Pass a short result summary; its value is the final result.",
+      "inputSchema": { "type": "object", "properties": { "summary": { "type": "string" } } }
+    }
+  ]
+}
