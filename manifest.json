@@ -1,0 +1,68 @@
+{
+    "manifest_version": 3,
+    "name": "makelaar-funda-tool",
+    "version": "1.0.0",
+    "description": "Webfuse extension that adds two custom MCP tools for funda.nl: getListProperties (searches a postcode + price range and reports how many homes were found, with the first page of results) and getPropertySummary (opens one listing and returns its description, key features and images).",
+    "content_scripts": [
+        {
+            "matches": ["*://*.funda.nl/*"],
+            "js": ["content.js"],
+            "run_at": "document_idle"
+        }
+    ],
+    "tools": [
+        {
+            "name": "getListProperties",
+            "description": "Searches funda.nl (the Dutch property portal) for homes for sale in a given postal-code area within a price range, and returns how many listings were found plus the first page of results (address, price, listing URL and a thumbnail). Self-contained: if the matching funda search page isn't open, it returns {status:\"navigate_required\", navigateTo} — open that URL with the navigate tool, then call this again.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "postal_code": {
+                        "type": "string",
+                        "description": "Dutch postal code or area to search, e.g. '1019' or 'amsterdam'. A 4-digit postcode works best."
+                    },
+                    "price_min": {
+                        "type": "integer",
+                        "description": "Minimum asking price in euros, e.g. 400000."
+                    },
+                    "price_max": {
+                        "type": "integer",
+                        "description": "Maximum asking price in euros, e.g. 500000."
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of listings to return from the first page (default 12)."
+                    }
+                },
+                "required": ["postal_code"]
+            }
+        },
+        {
+            "name": "getPropertySummary",
+            "description": "Opens a single funda.nl listing by its URL and returns the raw material for a summary: address, asking price, the full listing description, a list of key features, and image URLs. Self-contained: if that listing isn't the open page, it returns {status:\"navigate_required\", navigateTo} — open that URL with the navigate tool, then call this again.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Full funda.nl listing URL, e.g. 'https://www.funda.nl/detail/koop/amsterdam/appartement-.../12345678/'."
+                    }
+                },
+                "required": ["url"]
+            }
+        },
+        {
+            "name": "finish",
+            "description": "Call when the task is complete. Pass a short result summary; its value is returned as the final automation result.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "Short summary of the result."
+                    }
+                }
+            }
+        }
+    ]
+}
