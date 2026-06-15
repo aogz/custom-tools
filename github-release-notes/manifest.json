@@ -3,17 +3,11 @@
   "name": "github-release-notes",
   "version": "1.0.0",
   "description": "Custom MCP tool for GitHub: getLatestRelease returns a repo's latest release notes.",
-  "content_scripts": [
-    {
-      "matches": ["*://github.com/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "background": { "service_worker": "background.js" },
   "tools": [
     {
       "name": "getLatestRelease",
-      "description": "Returns a GitHub repo's latest release (tag, title, published date, notes). Pass `repo` as 'owner/name'. Self-contained: if that repo's releases page isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "description": "Returns a GitHub repo's latest release (tag, title, published date, notes). Pass `repo` as 'owner/name', e.g. 'vercel/next.js'. Self-contained: navigates to the repo's latest-release page and reads it in one call.",
       "inputSchema": {
         "type": "object",
         "properties": { "repo": { "type": "string", "description": "Repository as 'owner/name', e.g. 'vercel/next.js'." } },

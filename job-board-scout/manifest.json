@@ -3,23 +3,18 @@
   "name": "job-board-scout",
   "version": "1.0.0",
   "description": "Custom MCP tool: readJobs extracts job listings (title, company, location, url) from any board.",
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "background": { "service_worker": "background.js" },
   "tools": [
     {
       "name": "readJobs",
-      "description": "Extracts job listings (title, company, location, url) from the currently-open job board / results page. Pass `url` to target a specific page. Self-contained: if that page isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "description": "Self-contained: navigates to the given job search/results `url` and extracts job listings (title, url, location, snippet) from the page. Returns a small JSON list of the newest postings.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "url": { "type": "string", "description": "Job search/results URL to read." },
           "max_results": { "type": "integer", "description": "Max listings (default 15)." }
-        }
+        },
+        "required": ["url"]
       }
     },
     {

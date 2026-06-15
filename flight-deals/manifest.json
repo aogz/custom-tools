@@ -3,17 +3,11 @@
   "name": "flight-deals",
   "version": "1.0.0",
   "description": "Custom MCP tool for Google Flights: searchFlights returns the cheapest itineraries for a route + dates.",
-  "content_scripts": [
-    {
-      "matches": ["*://www.google.com/travel/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "background": { "service_worker": "background.js" },
   "tools": [
     {
       "name": "searchFlights",
-      "description": "Searches Google Flights for a route + dates and returns the cheapest itineraries (price, airline, times, stops). `from`/`to` are airports or cities, dates are YYYY-MM-DD. Self-contained: if the results page isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "description": "Searches Google Flights for a route + dates and returns the cheapest itineraries (price, airline, times, stops). `from`/`to` are airports or cities, dates are YYYY-MM-DD. Self-contained: navigates to the Google Flights results page and reads the itinerary list in one call.",
       "inputSchema": {
         "type": "object",
         "properties": {
