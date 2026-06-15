@@ -2,18 +2,12 @@
   "manifest_version": 3,
   "name": "amazon-deals",
   "version": "1.0.0",
-  "description": "Custom MCP tool for amazon.com: findDeals reads Today's Deals and returns discounted products.",
-  "content_scripts": [
-    {
-      "matches": ["*://*.amazon.com/*", "*://*.amazon.co.uk/*", "*://*.amazon.nl/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "description": "Custom MCP tool for amazon.com: findDeals navigates to Today's Deals and returns discounted products.",
+  "background": { "service_worker": "background.js" },
   "tools": [
     {
       "name": "findDeals",
-      "description": "Reads amazon.com's Today's Deals page and returns discounted products (title, price, discount, url). Self-contained: if the deals page isn't open it returns {status:\"navigate_required\", navigateTo} — open it with the navigate tool, then call again.",
+      "description": "Navigates to amazon.com's Today's Deals page, reads it, and returns discounted products (title, price, discount, url). Self-contained: it handles its own navigation and returns a small result in a single call.",
       "inputSchema": {
         "type": "object",
         "properties": {
