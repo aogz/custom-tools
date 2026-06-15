@@ -3,17 +3,11 @@
   "name": "hacker-news-digest",
   "version": "1.0.0",
   "description": "Custom MCP tool for Hacker News: getTopStories returns the front-page stories.",
-  "content_scripts": [
-    {
-      "matches": ["*://news.ycombinator.com/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "background": { "service_worker": "background.js" },
   "tools": [
     {
       "name": "getTopStories",
-      "description": "Reads the Hacker News front page and returns the top stories (rank, title, url, score, comments). Self-contained: if HN isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "description": "Navigates to the Hacker News front page and returns the top stories (rank, title, url, score, comments). Self-contained: it opens HN itself, no prior navigation needed.",
       "inputSchema": {
         "type": "object",
         "properties": { "limit": { "type": "integer", "description": "How many stories (default 10)." } }
