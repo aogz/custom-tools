@@ -3,17 +3,13 @@
     "name": "makelaar-funda-tool",
     "version": "1.0.0",
     "description": "Webfuse extension that adds two custom MCP tools for funda.nl: getListProperties (searches a postcode + price range and reports how many homes were found, with the first page of results) and getPropertySummary (opens one listing and returns its description, key features and images).",
-    "content_scripts": [
-        {
-            "matches": ["*://*.funda.nl/*"],
-            "js": ["content.js"],
-            "run_at": "document_idle"
-        }
-    ],
+    "background": {
+        "service_worker": "background.js"
+    },
     "tools": [
         {
             "name": "getListProperties",
-            "description": "Searches funda.nl (the Dutch property portal) for homes for sale in a given postal-code area within a price range, and returns how many listings were found plus the first page of results (address, price, listing URL and a thumbnail). Self-contained: if the matching funda search page isn't open, it returns {status:\"navigate_required\", navigateTo} — open that URL with the navigate tool, then call this again.",
+            "description": "Searches funda.nl (the Dutch property portal) for homes for sale in a given postal-code area within a price range, and returns how many listings were found plus the first page of results (address, price, listing URL and a thumbnail). Self-contained: it navigates to the matching funda search page itself and reads the results in one call.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -39,7 +35,7 @@
         },
         {
             "name": "getPropertySummary",
-            "description": "Opens a single funda.nl listing by its URL and returns the raw material for a summary: address, asking price, the full listing description, a list of key features, and image URLs. Self-contained: if that listing isn't the open page, it returns {status:\"navigate_required\", navigateTo} — open that URL with the navigate tool, then call this again.",
+            "description": "Opens a single funda.nl listing by its URL and returns the raw material for a summary: address, asking price, the full listing description, a list of key features, and image URLs. Self-contained: it navigates to the listing URL itself and reads the page in one call.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
