@@ -3,20 +3,15 @@
   "name": "competitor-price-watch",
   "version": "1.0.0",
   "description": "Custom MCP tool: readPrices extracts prices and nearby labels from any pricing page.",
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "background": { "service_worker": "background.js" },
   "tools": [
     {
       "name": "readPrices",
-      "description": "Extracts prices (and the nearest plan/product label) from the currently-open page. Pass `url` to target a specific pricing page. Self-contained: if that page isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "description": "Self-contained: navigates to the given pricing page `url`, then extracts prices and the nearest plan/product label. Returns {url, count, prices:[{label, price}]}.",
       "inputSchema": {
         "type": "object",
-        "properties": { "url": { "type": "string", "description": "Pricing page URL to read." } }
+        "properties": { "url": { "type": "string", "description": "Pricing page URL to read." } },
+        "required": ["url"]
       }
     },
     {
