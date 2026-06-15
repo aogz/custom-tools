@@ -3,17 +3,11 @@
   "name": "restaurant-finder",
   "version": "1.0.0",
   "description": "Custom MCP tool for OpenTable: findAvailability returns restaurants with open tables.",
-  "content_scripts": [
-    {
-      "matches": ["*://www.opentable.com/*", "*://www.opentable.co.uk/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
+  "background": { "service_worker": "background.js" },
   "tools": [
     {
       "name": "findAvailability",
-      "description": "Searches OpenTable and returns restaurants with open tables (name, cuisine, rating, price, available times). Self-contained: if the search results page isn't open it returns {status:\"navigate_required\", navigateTo}.",
+      "description": "Self-contained: navigates to OpenTable search and returns restaurants with open tables (name, cuisine, rating, price, available times) for a city/date/time/party/cuisine.",
       "inputSchema": {
         "type": "object",
         "properties": {
