@@ -1,70 +1,188 @@
 // competitor-price-watch — Webfuse custom MCP tool (service worker; self-contained).
+// readPrices: navigates to any pricing page `url`, reads the RAW HTML snapshot
+// (domSnapshot {quality:1}) and extracts {label, price} pairs with a generic parser.
 const A = () => browser.webfuseSession.automation;
 const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
-const abs = (h, base) => { try { return new URL(h, base).href; } catch { return h || ""; } };
+
 async function goto(url) {
   await A().navigate(url);
-  await new Promise((resolve) => {
-    let done = false;
-    const fin = () => { if (!done) { done = true; resolve(); } };
-    try { A().once("page:stable", fin); } catch { /* no event support */ }
-    setTimeout(fin, 8000);
+  await new Promise((res) => {
+    let d = false;
+    const f = () => { if (!d) { d = true; res(); } };
+    try { A().once("page:stable", f); } catch {}
+    setTimeout(f, 8000);
   });
 }
+
 async function snapshotHtml(opts = {}) {
-  return A().see.domSnapshot({ maxTokens: 8000, ...opts });
+  return A().see.domSnapshot({ quality: 1, ...opts });
 }
 
-const PRICE_RE = /(?:[$£€]\s?)[\d.,]+(?:\s?(?:\/mo|\/month|per month|\/yr|\/year))?/i;
-const HEADING_RE = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi;
-
-// Strip a chunk of HTML to plain text.
-const stripTags = (h) => clean(String(h || "").replace(/<[^>]+>/g, " "));
-
-// Parse prices + nearest preceding heading from an HTML snapshot string.
-function parsePrices(html, max = 20) {
-  const out = [];
-  const seen = new Set();
-
-  // Index every heading by its position so we can find the nearest one above a price.
-  const headings = [];
-  let hm;
-  HEADING_RE.lastIndex = 0;
-  while ((hm = HEADING_RE.exec(html)) !== null) {
-    const text = stripTags(hm[1]).slice(0, 60);
-    if (text) headings.push({ pos: hm.index, text });
+async function dismissConsent(selectors = []) {
+  for (const sel of selectors) {
+    try { await A().act.click(sel, { waitForTarget: false }); await A().wait(1200); } catch {}
   }
-  const nearestLabel = (pos) => {
-    let best = null;
-    for (const h of headings) {
-      if (h.pos <= pos) best = h.text;
-      else break;
+}
+
+// ---------------------------------------------------------------------------
+// Generic pricing parser. Works on raw HTML (quality:1) from any pricing page.
+// ---------------------------------------------------------------------------
+
+// Decode the handful of HTML entities that show up in plan/label text.
+const decode = (s) =>
+  String(s || "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, " ");
+
+const txt = (h) => clean(decode(String(h || "").replace(/<[^>]+>/g, " ")));
+
+// A money token: $/£/€ + number, optional cadence suffix (/mo, /month, /yr ...).
+const PRICE_RE = /[$£€]\s?\d[\d.,]*(?:\s?(?:\/\s?mo(?:nth)?|per\s+month|\/\s?yr|\/\s?year|\s?\/\s?month))?/i;
+const PRICE_RE_G = new RegExp(PRICE_RE.source, "gi");
+
+// "Free", "Custom", "Contact (sales)" act as a price when attached to a plan.
+const SOFT_PRICE_RE = /\b(free(?:\s+forever)?|custom(?:\s+pricing)?|contact(?:\s+(?:us|sales))?|let'?s\s+talk|get\s+a\s+quote)\b/i;
+
+// CTA / chrome text that masquerades as a short label — never use as a plan.
+const STOP_LABEL_RE = /^(sign\s*up|get\s+started|start(?:\s+free)?|try|buy|contact|learn\s+more|see\s+(?:all|more)|view|log\s*in|login|menu|home|popular|new|included|all\b)/i;
+
+// Plan/tier names used to recognise labels. Deliberately excludes "free" and
+// "custom" — on real pricing tables those are price VALUES (table cells), not
+// tier names, so keeping them out avoids treating every "Custom" cell as a plan.
+const PLAN_WORDS = [
+  "hobby", "pro", "enterprise", "starter", "basic", "standard",
+  "premium", "business", "team", "teams", "plus", "growth", "scale",
+  "professional", "developer", "advanced", "ultimate",
+  "essential", "essentials",
+];
+const PLAN_RE = new RegExp("^(?:" + PLAN_WORDS.join("|") + ")\\b", "i");
+// Exact plan tier: the whole text node IS the plan name (optionally "Plan").
+const PLAN_EXACT_RE = new RegExp("^(?:" + PLAN_WORDS.join("|") + ")(?:\\s+plan)?$", "i");
+
+// Pull every >text< node, recording its byte offset so we can correlate
+// labels (which appear before) with prices.
+function textNodes(html) {
+  const clean_html = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  const nodes = [];
+  const RE = />([^<>]+)</g;
+  let m;
+  while ((m = RE.exec(clean_html)) !== null) {
+    const t = clean(decode(m[1]));
+    if (t) nodes.push({ pos: m.index, text: t });
+  }
+  return { nodes, clean_html };
+}
+
+// Collect candidate labels: real headings (h1-h4), elements whose text is a
+// known plan word, and short stand-alone capitalised tokens. Each gets a
+// weight so plan-word/heading labels beat generic short text.
+function collectLabels(html, nodes) {
+  const labels = [];
+
+  // `data-plan="..."` / `data-tier="..."` / `value="..."` attrs — strong, stable
+  // plan anchors many pricing tables expose.
+  const ARE = /\bdata-(?:plan|tier)\s*=\s*"([^"]{1,24})"/gi;
+  let am;
+  while ((am = ARE.exec(html)) !== null) {
+    const t = clean(decode(am[1]));
+    if (t && !STOP_LABEL_RE.test(t)) {
+      const text = t.replace(/^\w/, (c) => c.toUpperCase()).slice(0, 60);
+      labels.push({ pos: am.index, text, weight: 3, plan: PLAN_EXACT_RE.test(text) });
     }
-    return best;
+  }
+
+  // Real headings.
+  const HRE = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi;
+  let hm;
+  while ((hm = HRE.exec(html)) !== null) {
+    const t = txt(hm[1]).slice(0, 60);
+    if (t && !STOP_LABEL_RE.test(t)) labels.push({ pos: hm.index, text: t, weight: 2, plan: PLAN_EXACT_RE.test(t) });
+  }
+
+  // Text nodes that look like a plan name.
+  for (const n of nodes) {
+    if (n.text.length > 24) continue;
+    if (PRICE_RE.test(n.text)) continue;
+    if (STOP_LABEL_RE.test(n.text)) continue;
+    if (PLAN_EXACT_RE.test(n.text)) {
+      labels.push({ pos: n.pos, text: n.text.slice(0, 60), weight: 3, plan: true });
+    } else if (/^[A-Z][A-Za-z0-9 +.&'-]{1,22}$/.test(n.text) && n.text.split(" ").length <= 4) {
+      // Short Title-ish phrase — weak label fallback.
+      labels.push({ pos: n.pos, text: n.text.slice(0, 60), weight: 1 });
+    }
+  }
+
+  labels.sort((a, b) => a.pos - b.pos);
+  return labels;
+}
+
+// Nearest preceding label, preferring higher weight when several are close by.
+function nearestLabel(labels, pos) {
+  let best = null;
+  let bestScore = -Infinity;
+  for (const l of labels) {
+    if (l.pos > pos) break;
+    const dist = pos - l.pos;
+    // Closer + heavier wins. Distance dominates, weight breaks near-ties.
+    const score = -dist + l.weight * 400;
+    if (score >= bestScore) { bestScore = score; best = l; }
+  }
+  return best;
+}
+
+function parse(html, url, max = 20) {
+  html = String(html || "");
+  const { nodes } = textNodes(html);
+  const labels = collectLabels(html, nodes);
+
+  const collected = [];
+  const seen = new Set();
+  const add = (lbl, price, soft) => {
+    const label = lbl ? clean(lbl.text).slice(0, 60) : null;
+    price = clean(price);
+    if (!price) return;
+    const key = `${(label || "").toLowerCase()}|${price.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    // Rank: plan-tier rows first (label is an exact plan name), then everything
+    // else; soft prices (Free/Custom) for a plan also rank high.
+    const isPlan = lbl && lbl.plan;
+    const rank = (isPlan ? 0 : 2) + (soft ? -0.5 : 0);
+    collected.push({ label: label || null, price, _rank: rank, _ord: collected.length });
   };
 
-  // Split into element-ish chunks of text, keep those that are mostly a price (leaf-like).
-  const text = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ");
-  // Match text between tags; record byte position for label lookup.
-  const CELL_RE = />([^<>]+)</g;
-  let cm;
-  while ((cm = CELL_RE.exec(text)) !== null) {
-    const t = clean(cm[1]);
-    if (!t || t.length > 24) continue;
-    const m = t.match(PRICE_RE);
-    if (!m || m[0].length < t.length - 2) continue;
-    const label = (nearestLabel(cm.index) || "").slice(0, 60);
-    const price = clean(m[0]);
-    const key = `${label}|${price}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({ label: label || null, price });
-    if (out.length >= max) break;
+  // Hard money tokens, anchored to their position for label lookup.
+  for (const n of nodes) {
+    let pm;
+    PRICE_RE_G.lastIndex = 0;
+    while ((pm = PRICE_RE_G.exec(n.text)) !== null) {
+      add(nearestLabel(labels, n.pos), pm[0], false);
+    }
   }
-  return out;
+
+  // Soft prices (Free / Custom / Contact) — only when the nearest label is an
+  // exact plan tier, so we capture e.g. Hobby/Free, Enterprise/Contact.
+  for (const n of nodes) {
+    if (n.text.length > 40) continue;
+    const sm = n.text.match(SOFT_PRICE_RE);
+    if (!sm) continue;
+    const label = nearestLabel(labels, n.pos);
+    if (!label || !label.plan) continue;
+    const word = sm[1].toLowerCase();
+    const price = /free/.test(word) ? "Free"
+      : /custom|quote/.test(word) ? "Custom"
+      : "Contact sales";
+    add(label, price, true);
+  }
+
+  collected.sort((a, b) => (a._rank - b._rank) || (a._ord - b._ord));
+  const prices = collected.slice(0, max).map(({ label, price }) => ({ label, price }));
+  return { url: url || "", count: prices.length, prices };
 }
 
-if (browser?.webfuseSession?.registerTool) {
+// ---------------------------------------------------------------------------
+
+if (typeof browser !== "undefined" && browser?.webfuseSession?.registerTool) {
   browser.webfuseSession.registerTool({
     name: "readPrices",
     description:
@@ -78,23 +196,27 @@ if (browser?.webfuseSession?.registerTool) {
     execute: async (args) => {
       const url = clean(args?.url);
       if (!url) return JSON.stringify({ url: "", count: 0, prices: [], error: "missing url" });
-      const target = abs(url, url);
-      await goto(target);
+      await goto(url);
+      await dismissConsent([
+        "#onetrust-accept-btn-handler",
+        'button[name="agree"]',
+        '[aria-label="Accept all"]',
+        "#didomi-notice-agree-button",
+      ]);
       const html = await snapshotHtml();
-      const prices = parsePrices(html || "");
-      return JSON.stringify({ url: target, count: prices.length, prices });
+      return JSON.stringify(parse(html || "", url));
     },
   });
 
   browser.webfuseSession.registerTool({
     name: "finish",
-    description: "Call when the task is complete. Pass a short result summary.",
+    description: "Call when the task is complete. Pass a short result summary; its value is the final result.",
     inputSchema: { type: "object", properties: { summary: { type: "string" } } },
     annotations: { readOnlyHint: true },
     execute: async (a) => clean(a?.summary) || "Done.",
   });
 
   console.log("[competitor-price-watch] readPrices + finish registered");
-} else {
-  console.warn("[competitor-price-watch] registerTool unavailable");
+} else if (typeof module !== "undefined") {
+  module.exports = { parse, clean }; // offline validation only
 }

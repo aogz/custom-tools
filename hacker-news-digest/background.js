@@ -1,81 +1,82 @@
 // hacker-news-digest — Webfuse custom MCP tool (service worker; self-contained).
 const A = () => browser.webfuseSession.automation;
-const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
-const abs = (h, base) => { try { return new URL(h, base).href; } catch { return h || ""; } };
+const clean = (s) => String(s||"").replace(/\s+/g," ").trim();
+const abs = (h, base) => { try { return new URL(h, base).href; } catch { return h||""; } };
 async function goto(url) {
   await A().navigate(url);
-  await new Promise((resolve) => {
-    let done = false;
-    const fin = () => { if (!done) { done = true; resolve(); } };
-    try { A().once("page:stable", fin); } catch { /* no event support */ }
-    setTimeout(fin, 8000);
-  });
+  await new Promise((res)=>{let d=false;const f=()=>{if(!d){d=true;res();}};try{A().once("page:stable",f);}catch{}setTimeout(f,8000);});
 }
-async function snapshotHtml(opts = {}) {
-  return A().see.domSnapshot({ maxTokens: 8000, ...opts });
-}
+// Raw, full-fidelity HTML — a small maxTokens triggers Webfuse D2Snap
+// downsampling into lossy markdown that breaks tag/class parsing.
+async function snapshotHtml(opts = {}) { return A().see.domSnapshot({ quality: 1, ...opts }); }
 
 const HN_URL = "https://news.ycombinator.com/";
 
-// Strip tags and decode the handful of entities HN emits.
+// Decode the handful of HTML entities HN emits, then strip tags.
+function decode(s) {
+  return String(s || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/&#x2f;/g, "/")
+    .replace(/&nbsp;/g, " ");
+}
 function text(html) {
-  return clean(
-    String(html || "")
-      .replace(/<[^>]*>/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#x27;/g, "'")
-      .replace(/&#x2F;/g, "/")
-      .replace(/&nbsp;/g, " "),
-  );
+  return clean(decode(String(html || "").replace(/<[^>]*>/g, " ")));
 }
 
-// Parse the HN front page HTML string into story objects.
-function parseStories(html, max) {
+// Parse the HN front-page HTML string into { url, stories:[{rank,title,url,score,comments}] }.
+function parse(html, max) {
   const out = [];
-  if (!html) return out;
+  if (!html) return { url: HN_URL, stories: out };
   // Each story headline lives in a <tr class="athing ..."> row.
   const rowRe = /<tr[^>]*\bclass="[^"]*\bathing\b[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
   let m;
   while ((m = rowRe.exec(html)) && out.length < max) {
     const row = m[1];
     // Title anchor: the .titleline link (fallbacks for older markup).
-    const linkRe =
-      /<span[^>]*class="[^"]*titleline[^"]*"[^>]*>[\s\S]*?<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i;
-    let link = linkRe.exec(row);
+    let link =
+      /<span[^>]*class="[^"]*\btitleline\b[^"]*"[^>]*>[\s\S]*?<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i.exec(row);
     if (!link) {
       link = /<a[^>]+class="[^"]*(?:storylink|titlelink)[^"]*"[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i.exec(row);
     }
     if (!link) continue;
-    const url = abs(text(link[1]), HN_URL);
+    const url = abs(decode(link[1]), HN_URL);
     const title = text(link[2]);
     if (!title) continue;
 
-    // Subtext row immediately follows the athing row in the source.
+    // Rank, if present, otherwise positional.
+    const rankM = /<span[^>]*class="[^"]*\brank\b[^"]*"[^>]*>\s*(\d+)\.?\s*<\/span>/i.exec(row);
+    const rank = rankM ? parseInt(rankM[1], 10) : out.length + 1;
+
+    // The subtext row immediately follows the athing row in the source.
     const after = html.slice(rowRe.lastIndex);
-    const subM = /<td[^>]*class="[^"]*subtext[^"]*"[^>]*>([\s\S]*?)<\/td>/i.exec(after);
+    const subM = /<td[^>]*class="[^"]*\bsubtext\b[^"]*"[^>]*>([\s\S]*?)<\/td>/i.exec(after);
     const sub = subM ? subM[1] : "";
-    const scoreM = /<span[^>]*class="[^"]*score[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(sub);
-    const score = scoreM ? text(scoreM[1]) : "";
-    // Comments: last anchor in the subtext that mentions "comment".
-    let comments = "";
-    const aRe = /<a[^>]*>([\s\S]*?)<\/a>/gi;
+
+    const scoreM = /<span[^>]*class="[^"]*\bscore\b[^"]*"[^>]*>([\s\S]*?)<\/span>/i.exec(sub);
+    const score = scoreM ? text(scoreM[1]) : null;
+
+    // Comments: last subtext anchor whose href points at an item/comment thread.
+    let comments = null;
+    const aRe = /<a[^>]+href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
     let am;
     while ((am = aRe.exec(sub))) {
-      const t = text(am[1]);
-      if (/comment/i.test(t) || /^\d+$/.test(t)) comments = t;
+      const href = am[1];
+      const t = text(am[2]);
+      if (/comment/i.test(href) || /comment/i.test(t)) {
+        const n = t.match(/\d[\d,]*/);
+        comments = n ? parseInt(n[0].replace(/,/g, ""), 10) : (/^discuss$/i.test(t) ? 0 : comments);
+      }
     }
-    out.push({
-      rank: out.length + 1,
-      title,
-      url,
-      score: score || null,
-      comments: /comment/i.test(comments) ? comments : null,
-    });
+
+    out.push({ rank, title, url, score, comments });
   }
-  return out;
+  return { url: HN_URL, stories: out };
 }
 
 if (browser?.webfuseSession?.registerTool) {
@@ -92,11 +93,7 @@ if (browser?.webfuseSession?.registerTool) {
       const limit = Math.min(Math.max(args?.limit || 10, 1), 30);
       await goto(HN_URL);
       const html = await snapshotHtml();
-      const stories = parseStories(html, limit);
-      if (!stories.length) {
-        return JSON.stringify({ url: HN_URL, stories: [], message: "No stories found." }, null, 2);
-      }
-      return JSON.stringify({ url: HN_URL, stories }, null, 2);
+      return JSON.stringify(parse(html, limit));
     },
   });
 
